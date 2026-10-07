@@ -4,5 +4,9 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+.vercel/
+.env
+.env.local
+.env.production
+.env*.local
 !.env.example
