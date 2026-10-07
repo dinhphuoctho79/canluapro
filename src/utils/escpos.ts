@@ -43,14 +43,18 @@ export function generateEscPosReceipt(batch: RiceBatch, paperWidth: 58 | 80 = 58
   // Collect all lots or single batch
   const lots: RiceLot[] =
     batch.lots && batch.lots.length > 0
-      ? batch.lots
+      ? batch.lots.map((lot) => ({
+          ...lot,
+          pricePerKg: Number(lot.pricePerKg) > 0 ? Number(lot.pricePerKg) : (Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0),
+          tareWeightPerBag: lot.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2,
+        }))
       : [
           {
             id: 'default',
             lotName: 'Lô lúa chính',
             riceVariety: batch.riceVariety,
-            pricePerKg: batch.pricePerKg,
-            tareWeightPerBag: batch.tareWeightPerBag,
+            pricePerKg: Number(batch.pricePerKg) || 0,
+            tareWeightPerBag: batch.tareWeightPerBag ?? 0.2,
             bags: batch.bags,
           },
         ];
@@ -109,9 +113,10 @@ export function generateEscPosReceipt(batch: RiceBatch, paperWidth: 58 | 80 = 58
     const lotBags = lot.bags;
     const lotBagCount = lotBags.length;
     const lotGross = lotBags.reduce((s, b) => s + b.weight, 0);
-    const lotTare = lotBagCount * lot.tareWeightPerBag;
+    const lotTare = lotBagCount * (lot.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2);
     const lotNet = Math.max(0, lotGross - lotTare);
-    const lotAmount = Math.round(lotNet * lot.pricePerKg);
+    const activePrice = Number(lot.pricePerKg) > 0 ? Number(lot.pricePerKg) : (Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0);
+    const lotAmount = Math.round(lotNet * activePrice);
 
     grandTotalBags += lotBagCount;
     grandGrossWeight += lotGross;
@@ -126,8 +131,8 @@ export function generateEscPosReceipt(batch: RiceBatch, paperWidth: 58 | 80 = 58
     }
 
     addLine(formatTwoColumns('Giong lua:', lot.riceVariety, lineWidth));
-    addLine(formatTwoColumns('Don gia:', `${formatNumber(lot.pricePerKg, 0)} d/kg`, lineWidth));
-    addLine(formatTwoColumns('Tru bao:', `${lot.tareWeightPerBag} kg/bao`, lineWidth));
+    addLine(formatTwoColumns('Don gia:', `${formatNumber(activePrice, 0)} d/kg`, lineWidth));
+    addLine(formatTwoColumns('Tru bao:', `${lot.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2} kg/bao`, lineWidth));
     addLine(separator);
 
     // Sheets in this lot
@@ -159,7 +164,7 @@ export function generateEscPosReceipt(batch: RiceBatch, paperWidth: 58 | 80 = 58
   });
 
   // 5. Porterage Fee Calculations
-  const porterageFeePerBag = batch.porterageFeePerBag || 0;
+  const porterageFeePerBag = batch.porterFeePerBag ?? batch.porterageFeePerBag ?? 0;
   const totalPorterageFee = grandTotalBags * porterageFeePerBag;
   const porteragePayer = batch.porteragePayer || 'buyer';
 
@@ -167,7 +172,6 @@ export function generateEscPosReceipt(batch: RiceBatch, paperWidth: 58 | 80 = 58
   if (porteragePayer === 'farmer') {
     finalPayout -= totalPorterageFee;
   }
-  finalPayout = Math.max(0, finalPayout);
 
   // 6. Grand Summary
   addBytes(ESC, 0x45, 0x01); // Bold ON
@@ -199,9 +203,15 @@ export function generateEscPosReceipt(batch: RiceBatch, paperWidth: 58 | 80 = 58
   // 7. Huge Payout Highlight (Double Size)
   addBytes(ESC, 0x61, 0x01); // Center
   addBytes(ESC, 0x45, 0x01); // Bold ON
-  addLine('TIEN CON LAI TRA NONG DAN:');
-  addBytes(GS, 0x21, 0x11);  // Double size
-  addLine(`${formatNumber(finalPayout, 0)} D`);
+  if (finalPayout < 0) {
+    addLine('NONG DAN CON THIEU LAI LAI:');
+    addBytes(GS, 0x21, 0x11);  // Double size
+    addLine(`-${formatNumber(Math.abs(finalPayout), 0)} D`);
+  } else {
+    addLine('TIEN CON LAI TRA NONG DAN:');
+    addBytes(GS, 0x21, 0x11);  // Double size
+    addLine(`${formatNumber(finalPayout, 0)} D`);
+  }
   addBytes(GS, 0x21, 0x00);  // Normal size
   addBytes(ESC, 0x45, 0x00); // Bold OFF
 

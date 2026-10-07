@@ -17,17 +17,28 @@ export function formatNumber(num: number, decimals: number = 1): string {
 }
 
 function getLots(batch: RiceBatch): RiceLot[] {
+  const fallbackPrice = Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0;
+  const fallbackTare = typeof batch.tareWeightPerBag === 'number' ? batch.tareWeightPerBag : 0.2;
+
   if (batch.lots && batch.lots.length > 0) {
-    return batch.lots;
+    return batch.lots.map((lot, idx) => ({
+      ...lot,
+      pricePerKg: Number(lot.pricePerKg) > 0 ? Number(lot.pricePerKg) : fallbackPrice,
+      tareWeightPerBag: typeof lot.tareWeightPerBag === 'number' ? lot.tareWeightPerBag : fallbackTare,
+      lotName: lot.lotName || `Lô ${idx + 1}`,
+      riceVariety: lot.riceVariety || batch.riceVariety || 'Lúa',
+      bags: lot.bags || [],
+    }));
   }
+
   return [
     {
       id: 'default',
       lotName: 'Lô lúa chính',
-      riceVariety: batch.riceVariety,
-      pricePerKg: batch.pricePerKg,
-      tareWeightPerBag: batch.tareWeightPerBag,
-      bags: batch.bags,
+      riceVariety: batch.riceVariety || 'Lúa',
+      pricePerKg: fallbackPrice,
+      tareWeightPerBag: fallbackTare,
+      bags: batch.bags || [],
     },
   ];
 }
@@ -35,16 +46,17 @@ function getLots(batch: RiceBatch): RiceLot[] {
 // Generate structured text message to send directly via Zalo
 export function generateZaloTextMessage(batch: RiceBatch): string {
   const lots = getLots(batch);
+  const defaultBatchPrice = Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0;
 
   let grandTotalBags = 0;
   let grandGrossWeight = 0;
   let calculatedBagTare = 0;
 
   const lotMetrics = lots.map((lot) => {
-    const lotBags = lot.bags;
+    const lotBags = lot.bags || [];
     const lotBagCount = lotBags.length;
     const lotGross = lotBags.reduce((s, b) => s + b.weight, 0);
-    const lotTare = lotBagCount * (lot.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2);
+    const lotTare = lotBagCount * (typeof lot.tareWeightPerBag === 'number' ? lot.tareWeightPerBag : 0.2);
     grandTotalBags += lotBagCount;
     grandGrossWeight += lotGross;
     calculatedBagTare += lotTare;
@@ -60,9 +72,10 @@ export function generateZaloTextMessage(batch: RiceBatch): string {
     const lotShare = grandGrossWeight > 0 ? item.lotGross / grandGrossWeight : 1;
     const lotTare = flatTare > 0 ? flatTare * lotShare : item.lotTare;
     const lotNet = Math.max(0, item.lotGross - lotTare);
-    const lotAmount = Math.round(lotNet * item.lot.pricePerKg);
+    const activePrice = Number(item.lot.pricePerKg) > 0 ? Number(item.lot.pricePerKg) : defaultBatchPrice;
+    const lotAmount = Math.round(lotNet * activePrice);
     grandTotalAmount += lotAmount;
-    return { ...item, lotTare, lotNet, lotAmount };
+    return { ...item, lotTare, lotNet, lotAmount, activePrice };
   });
 
   let text = `🌾 PHIẾU CÂN LÚA PRO 🌾\n`;
@@ -74,27 +87,27 @@ export function generateZaloTextMessage(batch: RiceBatch): string {
 
   lots.forEach((lot, idx) => {
     const finalItem = lotsFinal[idx];
-    const lotBags = lot.bags;
+    const lotBags = lot.bags || [];
     const lotBagCount = finalItem.lotBagCount;
-    const lotGross = finalItem.lotGross;
-    const lotTare = finalItem.lotTare;
     const lotNet = finalItem.lotNet;
     const lotAmount = finalItem.lotAmount;
+    const activePrice = finalItem.activePrice;
 
     if (lots.length > 1) {
       text += `📦 LÔ ${idx + 1}: ${lot.lotName || lot.riceVariety}\n`;
-      text += `   • Giống: ${lot.riceVariety} | Đơn giá: ${formatVND(lot.pricePerKg)}/kg | Trừ bao: ${flatTare > 0 ? 'Trừ khoán' : `${lot.tareWeightPerBag}kg`}\n`;
+      text += `   • Giống: ${lot.riceVariety} | Đơn giá: ${formatVND(activePrice)}/kg | Trừ bao: ${flatTare > 0 ? 'Trừ khoán' : `${lot.tareWeightPerBag}kg`}\n`;
     } else {
       text += `🌾 Giống lúa: ${lot.riceVariety}\n`;
-      text += `💵 Đơn giá: ${formatVND(lot.pricePerKg)}/kg\n`;
+      text += `💵 Đơn giá: ${formatVND(activePrice)}/kg\n`;
       text += `⚖️ Trừ bao bì: ${flatTare > 0 ? `Trừ khoán ${flatTare} kg` : `${lot.tareWeightPerBag} kg/bao`}\n`;
     }
 
     // Group sheets in this lot
-    const sheetsCount = Math.max(1, Math.ceil(lotBags.length / batch.bagsPerSheet));
+    const bagsPerSheet = batch.bagsPerSheet || 10;
+    const sheetsCount = Math.max(1, Math.ceil(lotBags.length / bagsPerSheet));
     for (let s = 1; s <= sheetsCount; s++) {
-      const startIndex = (s - 1) * batch.bagsPerSheet;
-      const sheetBags = lotBags.slice(startIndex, startIndex + batch.bagsPerSheet);
+      const startIndex = (s - 1) * bagsPerSheet;
+      const sheetBags = lotBags.slice(startIndex, startIndex + bagsPerSheet);
       if (sheetBags.length === 0) continue;
       const sheetGross = sheetBags.reduce((acc, b) => acc + b.weight, 0);
       const weightsList = sheetBags.map((b) => b.weight.toFixed(1)).join(' - ');
@@ -108,15 +121,17 @@ export function generateZaloTextMessage(batch: RiceBatch): string {
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
   });
 
-  const porterageFeePerBag = batch.porterageFeePerBag || 0;
+  const porterageFeePerBag = batch.porterFeePerBag ?? batch.porterageFeePerBag ?? 0;
   const totalPorterageFee = grandTotalBags * porterageFeePerBag;
-  const porteragePayer = batch.porteragePayer || 'buyer';
+  const porteragePayer = batch.porterPayer ?? batch.porteragePayer ?? 'buyer';
 
   let finalPayout = grandTotalAmount - (batch.depositAmount || 0);
   if (porteragePayer === 'farmer') {
     finalPayout -= totalPorterageFee;
+  } else if (porteragePayer === 'split') {
+    finalPayout -= Math.round(totalPorterageFee / 2);
   }
-  finalPayout = Math.max(0, finalPayout);
+  const isFarmerOwing = finalPayout < 0;
 
   text += `📊 TỔNG KẾT THANH TOÁN:\n`;
   text += `• Tổng số bao: ${grandTotalBags} bao\n`;
@@ -125,20 +140,26 @@ export function generateZaloTextMessage(batch: RiceBatch): string {
   text += `• KÝ TỊNH: ${formatNumber(grandNetWeight)} kg\n`;
   text += `• Ký tịnh bằng chữ: ${readVietnameseWeight(grandNetWeight)}\n`;
   text += `• Tổng thành tiền: ${formatVND(grandTotalAmount)}\n`;
-  if (batch.depositAmount > 0) {
-    text += `• Tiền cọc đã ứng: -${formatVND(batch.depositAmount)}\n`;
+  if ((batch.depositAmount || 0) > 0) {
+    text += `• Tiền cọc đã ứng: -${formatVND(batch.depositAmount || 0)}\n`;
   }
   if (totalPorterageFee > 0) {
     if (porteragePayer === 'farmer') {
       text += `• Tiền bốc vác (${grandTotalBags} bao x ${formatVND(porterageFeePerBag)}/bao): -${formatVND(totalPorterageFee)} (nông dân chịu)\n`;
     } else if (porteragePayer === 'split') {
-      text += `• Tiền bốc vác (${grandTotalBags} bao x ${formatVND(porterageFeePerBag)}/bao): -${formatVND(totalPorterageFee / 2)} (chia đôi)\n`;
+      text += `• Tiền bốc vác (${grandTotalBags} bao x ${formatVND(porterageFeePerBag)}/bao): -${formatVND(totalPorterageFee / 2)} (chia đôi 50%)\n`;
     } else {
       text += `• Tiền bốc vác (${grandTotalBags} bao x ${formatVND(porterageFeePerBag)}/bao): ${formatVND(totalPorterageFee)} (thương lái chi riêng)\n`;
     }
   }
-  text += `👉 CÒN LẠI TRẢ NÔNG DÂN: ${formatVND(finalPayout)}\n`;
-  text += `👉 Tiền thanh toán bằng chữ: ${readVietnameseMoney(finalPayout)}\n`;
+
+  if (isFarmerOwing) {
+    text += `⚠️ NÔNG DÂN CÒN THIẾU LẠI LÁI: -${formatVND(Math.abs(finalPayout))}\n`;
+    text += `👉 Bằng chữ: Chủ ruộng còn thiếu lại thương lái ${readVietnameseMoney(Math.abs(finalPayout)).toLowerCase()}\n`;
+  } else {
+    text += `👉 CÒN LẠI TRẢ NÔNG DÂN: ${formatVND(finalPayout)}\n`;
+    text += `👉 Tiền thanh toán bằng chữ: ${readVietnameseMoney(finalPayout)}\n`;
+  }
   text += `━━━━━━━━━━━━━━━━━━━━━\n`;
   text += `Phần mềm Cân Lúa Pro • Tác giả: Nguyễn Công Dinh (Cần Thơ) • Zalo: 039.399.0638`;
 
@@ -167,12 +188,19 @@ export function generateCSV(batch: RiceBatch): string {
   // Headers
   csv += `"STT","Lô lúa","Tờ số","Trọng lượng gộp (kg)","Trừ bao (kg)","Trọng lượng tịnh (kg)","Đơn giá (đ)","Thành tiền (đ)"\n`;
 
+  const defaultPrice = Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0;
+  const bagsPerSheet = batch.bagsPerSheet || 10;
+
   lots.forEach((lot) => {
-    lot.bags.forEach((bag, idx) => {
-      const sheetNum = Math.floor(idx / batch.bagsPerSheet) + 1;
-      const tare = lot.tareWeightPerBag;
+    const lotBags = lot.bags || [];
+    const activeLotPrice = Number(lot.pricePerKg) > 0 ? Number(lot.pricePerKg) : defaultPrice;
+    const tarePerBag = typeof lot.tareWeightPerBag === 'number' ? lot.tareWeightPerBag : 0.2;
+
+    lotBags.forEach((bag, idx) => {
+      const sheetNum = Math.floor(idx / bagsPerSheet) + 1;
+      const tare = tarePerBag;
       const net = Math.max(0, bag.weight - tare);
-      const amount = Math.round(net * lot.pricePerKg);
+      const amount = Math.round(net * activeLotPrice);
 
       grandTotalBags++;
       grandGrossWeight += bag.weight;
@@ -180,27 +208,29 @@ export function generateCSV(batch: RiceBatch): string {
       grandNetWeight += net;
       grandTotalAmount += amount;
 
-      csv += `${bag.bagIndex},"${lot.lotName || lot.riceVariety}",${sheetNum},${bag.weight.toFixed(1)},${tare.toFixed(1)},${net.toFixed(1)},${lot.pricePerKg},${amount}\n`;
+      csv += `${bag.bagIndex},"${lot.lotName || lot.riceVariety}",${sheetNum},${bag.weight.toFixed(1)},${tare.toFixed(1)},${net.toFixed(1)},${activeLotPrice},${amount}\n`;
     });
   });
 
-  const porterageFeePerBag = batch.porterageFeePerBag || 0;
+  const porterageFeePerBag = batch.porterFeePerBag ?? batch.porterageFeePerBag ?? 0;
   const totalPorterageFee = grandTotalBags * porterageFeePerBag;
-  const porteragePayer = batch.porteragePayer || 'buyer';
+  const porteragePayer = batch.porterPayer ?? batch.porteragePayer ?? 'buyer';
 
   let finalPayout = grandTotalAmount - (batch.depositAmount || 0);
   if (porteragePayer === 'farmer') {
     finalPayout -= totalPorterageFee;
+  } else if (porteragePayer === 'split') {
+    finalPayout -= Math.round(totalPorterageFee / 2);
   }
-  finalPayout = Math.max(0, finalPayout);
+  const isFarmerOwing = finalPayout < 0;
 
   csv += `\n`;
   csv += `"TỔNG CỘNG:","${grandTotalBags} bao",,${grandGrossWeight.toFixed(1)},${grandTotalTare.toFixed(1)},${grandNetWeight.toFixed(1)},,${grandTotalAmount}\n`;
   csv += `"TIỀN CỌC ĐÃ ỨNG:","","","","","",,"-${batch.depositAmount || 0}"\n`;
   if (totalPorterageFee > 0) {
-    csv += `"TIỀN BỐC VÁC (${porteragePayer === 'farmer' ? 'Dân chịu' : 'Lái chịu'}):","","","","","",,"${porteragePayer === 'farmer' ? `-${totalPorterageFee}` : totalPorterageFee}"\n`;
+    csv += `"TIỀN BỐC VÁC (${porteragePayer === 'farmer' ? 'Dân chịu' : porteragePayer === 'split' ? 'Chia đôi 50%' : 'Lái chịu'}):","","","","","",,"${porteragePayer === 'farmer' ? `-${totalPorterageFee}` : porteragePayer === 'split' ? `-${Math.round(totalPorterageFee / 2)}` : totalPorterageFee}"\n`;
   }
-  csv += `"THỰC TRẢ NÔNG DÂN:","","","","","",,"${finalPayout}"\n`;
+  csv += `"${isFarmerOwing ? 'NÔNG DÂN CÒN THIẾU LẠI LÁI' : 'THỰC TRẢ NÔNG DÂN'}:","","","","","",,"${isFarmerOwing ? -Math.abs(finalPayout) : finalPayout}"\n`;
   csv += `"GHI CHÚ:","Phần mềm Cân Lúa Pro - Nhanh chóng • Chuẩn xác • Minh bạch"\n`;
 
   return csv;
@@ -312,9 +342,10 @@ export async function generateReceiptImage(batch: RiceBatch): Promise<string> {
     const lotShare = grandGrossWeight > 0 ? item.lotGross / grandGrossWeight : 1;
     const lotTare = flatTare > 0 ? flatTare * lotShare : item.lotTare;
     const lotNet = Math.max(0, item.lotGross - lotTare);
-    const lotAmount = Math.round(lotNet * item.lot.pricePerKg);
+    const activePrice = Number(item.lot.pricePerKg) > 0 ? Number(item.lot.pricePerKg) : (Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0);
+    const lotAmount = Math.round(lotNet * activePrice);
     grandTotalAmount += lotAmount;
-    return { ...item, lotTare, lotNet, lotAmount };
+    return { ...item, lotTare, lotNet, lotAmount, activePrice };
   });
 
   lots.forEach((lot, lotIdx) => {
@@ -325,13 +356,14 @@ export async function generateReceiptImage(batch: RiceBatch): Promise<string> {
     const lotTare = finalItem.lotTare;
     const lotNet = finalItem.lotNet;
     const lotAmount = finalItem.lotAmount;
+    const activePrice = finalItem.activePrice;
 
     // Lot Title
     ctx.fillStyle = '#0F172A';
     ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(
-      `LÔ ${lotIdx + 1}: ${lot.lotName || lot.riceVariety} - ${formatVND(lot.pricePerKg)}/kg (Trừ bì: ${flatTare > 0 ? 'Trừ khoán' : `${lot.tareWeightPerBag}kg`})`,
+      `LÔ ${lotIdx + 1}: ${lot.lotName || lot.riceVariety} - ${formatVND(activePrice)}/kg (Trừ bì: ${flatTare > 0 ? 'Trừ khoán' : `${lot.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2}kg`})`,
       padding,
       y
     );
@@ -374,7 +406,7 @@ export async function generateReceiptImage(batch: RiceBatch): Promise<string> {
   });
 
   // Porterage calculations
-  const porterageFeePerBag = batch.porterageFeePerBag || 0;
+  const porterageFeePerBag = batch.porterFeePerBag ?? batch.porterageFeePerBag ?? 0;
   const totalPorterageFee = grandTotalBags * porterageFeePerBag;
   const porteragePayer = batch.porteragePayer || 'buyer';
 
@@ -382,7 +414,6 @@ export async function generateReceiptImage(batch: RiceBatch): Promise<string> {
   if (porteragePayer === 'farmer') {
     finalPayout -= totalPorterageFee;
   }
-  finalPayout = Math.max(0, finalPayout);
 
   // Summary box
   y += 15;
@@ -416,9 +447,15 @@ export async function generateReceiptImage(batch: RiceBatch): Promise<string> {
     ctx.fillText(`Bốc vác: 0đ`, width - padding - 20, y + 88);
   }
 
-  ctx.fillStyle = '#4ADE80'; // Neon green
-  ctx.font = 'bold 22px sans-serif';
-  ctx.fillText(`CÒN LẠI: ${formatVND(finalPayout)}`, width - padding - 20, y + 125);
+  if (finalPayout < 0) {
+    ctx.fillStyle = '#F59E0B'; // Amber warning for farmer debt
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(`CÒN THIẾU: -${formatVND(Math.abs(finalPayout))}`, width - padding - 20, y + 125);
+  } else {
+    ctx.fillStyle = '#4ADE80'; // Neon green
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText(`CÒN LẠI: ${formatVND(finalPayout)}`, width - padding - 20, y + 125);
+  }
 
   // Bằng chữ box (2 lines)
   y += 195;
@@ -431,7 +468,10 @@ export async function generateReceiptImage(batch: RiceBatch): Promise<string> {
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText(`⚖️ Ký tịnh bằng chữ: ${readVietnameseWeight(grandNetWeight)}`, padding + 16, y + 25);
-  ctx.fillText(`💵 Tiền thanh toán bằng chữ: ${readVietnameseMoney(finalPayout)}`, padding + 16, y + 50);
+  const payoutWord = finalPayout < 0
+    ? `Nông dân còn thiếu lại lái: âm ${readVietnameseMoney(Math.abs(finalPayout))}`
+    : readVietnameseMoney(finalPayout);
+  ctx.fillText(`💵 Tiền thanh toán bằng chữ: ${payoutWord}`, padding + 16, y + 50);
 
   // Footer stamp
   y += 95;

@@ -446,9 +446,10 @@ export function exportRiceBatchToExcel(batch: RiceBatch, allBatches: RiceBatch[]
     bLots.forEach((l) => {
       const count = l.bags.length;
       const gross = l.bags.reduce((s, x) => s + x.weight, 0);
-      const tare = count * (typeof l.tareWeightPerBag === 'number' ? l.tareWeightPerBag : 0.2);
+      const tare = count * (typeof l.tareWeightPerBag === 'number' ? l.tareWeightPerBag : (b.tareWeightPerBag ?? 0.2));
       const net = Math.max(0, gross - tare);
-      const amt = Math.round(net * (l.pricePerKg || 0));
+      const lotPrice = Number(l.pricePerKg) > 0 ? Number(l.pricePerKg) : (Number(b.pricePerKg) > 0 ? Number(b.pricePerKg) : 0);
+      const amt = Math.round(net * lotPrice);
 
       bBags += count;
       bNet += net;
@@ -461,7 +462,6 @@ export function exportRiceBatchToExcel(batch: RiceBatch, allBatches: RiceBatch[]
     if ((b.porterPayer ?? b.porteragePayer ?? 'buyer') === 'farmer') {
       bPayout -= bPorterage;
     }
-    bPayout = Math.max(0, bPayout);
 
     totalAllBags += bBags;
     totalAllNet += bNet;

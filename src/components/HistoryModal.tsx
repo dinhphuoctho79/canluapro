@@ -67,9 +67,32 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         <div className="flex-1 overflow-y-auto space-y-2.5 my-3 pr-1">
           {batches.map((b) => {
             const isCurrent = b.id === currentBatchId;
-            const gross = b.bags.reduce((s, bag) => s + bag.weight, 0);
-            const net = Math.max(0, gross - b.bags.length * b.tareWeightPerBag);
-            const payout = Math.max(0, Math.round(net * b.pricePerKg) - b.depositAmount);
+            const allBags = b.lots && b.lots.length > 0 ? b.lots.flatMap((l) => l.bags) : b.bags;
+            const gross = allBags.reduce((s, bag) => s + bag.weight, 0);
+            const flatTare = b.flatTareAmount || 0;
+            const calculatedTare = b.lots && b.lots.length > 0
+              ? b.lots.reduce((acc, l) => acc + l.bags.length * (l.tareWeightPerBag ?? b.tareWeightPerBag ?? 0.2), 0)
+              : allBags.length * (b.tareWeightPerBag ?? 0.2);
+            const totalTare = flatTare > 0 ? flatTare : calculatedTare;
+            const net = Math.max(0, gross - totalTare);
+
+            let totalAmount = 0;
+            if (b.lots && b.lots.length > 0) {
+              b.lots.forEach((l) => {
+                const lGross = l.bags.reduce((s, bag) => s + bag.weight, 0);
+                const lShare = gross > 0 ? lGross / gross : 1;
+                const lTare = flatTare > 0 ? flatTare * lShare : l.bags.length * (l.tareWeightPerBag ?? b.tareWeightPerBag ?? 0.2);
+                const lNet = Math.max(0, lGross - lTare);
+                const lPrice = Number(l.pricePerKg) > 0 ? Number(l.pricePerKg) : (Number(b.pricePerKg) > 0 ? Number(b.pricePerKg) : 0);
+                totalAmount += Math.round(lNet * lPrice);
+              });
+            } else {
+              totalAmount = Math.round(net * (Number(b.pricePerKg) || 0));
+            }
+            const porterFee = b.porterFeePerBag ?? b.porterageFeePerBag ?? 0;
+            const porterPayer = b.porteragePayer || 'buyer';
+            const porterShare = porterPayer === 'farmer' ? allBags.length * porterFee : 0;
+            const payout = totalAmount - (b.depositAmount || 0) - porterShare;
 
             return (
               <div
@@ -111,10 +134,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
                   <div className="mt-2 flex items-center gap-3 font-mono">
                     <span className="font-bold text-slate-700 dark:text-slate-300">
-                      {b.bags.length} bao ({formatNumber(net)} kg)
+                      {allBags.length} bao ({formatNumber(net)} kg)
                     </span>
-                    <span className="font-extrabold text-emerald-700 dark:text-emerald-400">
-                      {formatVND(payout)}
+                    <span className={`font-extrabold ${payout < 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                      {payout < 0 ? `-${formatVND(Math.abs(payout))}` : formatVND(payout)}
                     </span>
                   </div>
                 </div>

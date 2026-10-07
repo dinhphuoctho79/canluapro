@@ -50,11 +50,9 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
   lots.forEach((l) => {
     const bCount = l.bags.length;
     const gWeight = l.bags.reduce((acc, b) => acc + b.weight, 0);
-    const tWeight = bCount * l.tareWeightPerBag;
+    const tWeight = bCount * (l.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2);
     const nWeight = Math.max(0, gWeight - tWeight);
-    const effectivePrice = (typeof l.pricePerKg === 'number' && l.pricePerKg > 0)
-      ? l.pricePerKg
-      : (batch.pricePerKg || 0);
+    const effectivePrice = Number(l.pricePerKg) > 0 ? Number(l.pricePerKg) : (Number(batch.pricePerKg) > 0 ? Number(batch.pricePerKg) : 0);
     const amt = Math.round(nWeight * effectivePrice);
 
     totalBags += bCount;
@@ -64,7 +62,13 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
     totalAmount += amt;
   });
 
-  const porterageFeePerBag = batch.porterageFeePerBag || 0;
+  const flatTare = batch.flatTareAmount || 0;
+  if (flatTare > 0) {
+    netWeight = Math.max(0, grossWeight - flatTare);
+    totalAmount = Math.round(netWeight * (Number(batch.pricePerKg) || 0));
+  }
+
+  const porterageFeePerBag = batch.porterFeePerBag ?? batch.porterageFeePerBag ?? 0;
   const totalPorterageFee = totalBags * porterageFeePerBag;
   const porteragePayer = batch.porteragePayer || 'buyer';
 
@@ -72,7 +76,7 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
   if (porteragePayer === 'farmer') {
     finalPayout -= totalPorterageFee;
   }
-  finalPayout = Math.max(0, finalPayout);
+  const qrTransferAmount = Math.max(0, finalPayout);
 
   const selectedBank = POPULAR_VIETNAMESE_BANKS.find((b) => b.id === selectedBankId) || POPULAR_VIETNAMESE_BANKS[0];
   const memo = `TIEN LUA ${removeVietnameseAccents(batch.farmerName || 'CHU RUONG')}`.slice(0, 40);
@@ -92,7 +96,7 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
         bankBin,
         accountNumber: cleanAccount,
         accountName,
-        amount: finalPayout,
+        amount: qrTransferAmount,
         memo,
       });
       setQrDataUrl(url);
@@ -103,7 +107,7 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
         bankBin,
         accountNumber: cleanAccount,
         accountName,
-        amount: finalPayout,
+        amount: qrTransferAmount,
         memo,
       })
         .then((dataUrl) => {
@@ -176,14 +180,16 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
         </div>
 
         {/* Amount to pay banner */}
-        <div className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-3.5 mb-4 shadow-md text-center">
+        <div className={`rounded-2xl text-white p-3.5 mb-4 shadow-md text-center ${
+          finalPayout < 0 ? 'bg-gradient-to-r from-amber-600 to-rose-700' : 'bg-gradient-to-r from-emerald-600 to-teal-700'
+        }`}>
           <span className="text-[11px] font-bold uppercase tracking-wider block opacity-90">
-            SỐ TIỀN THỰC TRẢ NÔNG DÂN
+            {finalPayout < 0 ? '⚠️ NÔNG DÂN CÒN THIẾU LẠI LÁI' : 'SỐ TIỀN THỰC TRẢ NÔNG DÂN'}
           </span>
           <span className="text-2xl sm:text-3xl font-black font-mono-num tracking-tight block my-0.5">
-            {formatVND(finalPayout)}
+            {finalPayout < 0 ? `-${formatVND(Math.abs(finalPayout))}` : formatVND(finalPayout)}
           </span>
-          <span className="text-[11px] text-emerald-100 block">
+          <span className="text-[11px] opacity-90 block">
             (Tổng {totalBags} bao lúa · Ký tịnh {netWeight.toFixed(1)} kg)
           </span>
         </div>
