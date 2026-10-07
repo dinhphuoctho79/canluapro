@@ -62,6 +62,57 @@ const createNewBatch = (farmerIndex: number = 1): RiceBatch => {
   };
 };
 
+// Mẻ cân mẫu trải nghiệm tức thì: Ruộng Chú Năm Cò - 150 bao - Đài Thơm 8
+export const createDemoBatch = (): RiceBatch => {
+  const today = new Date().toISOString().split('T')[0];
+  const id = `batch-demo-nam-co`;
+
+  // Tạo 150 bao mẫu quanh mốc 50kg (từ 49.5kg đến 51.5kg)
+  const demoBags: BagEntry[] = [];
+  const baseWeights = [50.0, 50.2, 50.4, 50.6, 50.8, 51.0, 49.8, 50.5, 51.2, 50.3];
+  for (let i = 1; i <= 150; i++) {
+    const w = baseWeights[(i - 1) % baseWeights.length];
+    demoBags.push({
+      id: `bag-demo-${i}`,
+      bagIndex: i,
+      weight: w,
+      timestamp: Date.now() - (150 - i) * 15000,
+    });
+  }
+
+  const demoLot: RiceLot = {
+    id: 'lot-demo-1',
+    lotName: 'Lô 1 - Đài Thơm 8',
+    riceVariety: 'Đài Thơm 8',
+    pricePerKg: 8200,
+    tareWeightPerBag: 0.2,
+    bags: demoBags,
+  };
+
+  return {
+    id,
+    code: `CLP-${today.replace(/-/g, '')}-NAMCO`,
+    date: today,
+    farmerName: 'Chú Năm Cò (Thới Lai)',
+    farmerPhone: '0918123456',
+    riceVariety: 'Đài Thơm 8',
+    pricePerKg: 8200,
+    depositAmount: 5000000,
+    tareWeightPerBag: 0.2,
+    bagsPerSheet: 10,
+    weighingMode: 'nhon_hoa',
+    bags: demoBags,
+    porterFeePerBag: 5000,
+    porterPayer: 'buyer',
+    transportType: 'boat',
+    lots: [demoLot],
+    activeLotId: demoLot.id,
+    createdAt: Date.now() - 3600000,
+    updatedAt: Date.now(),
+    isPaid: false,
+  };
+};
+
 export default function App() {
   // Load batches from localStorage
   const [batches, setBatches] = useState<RiceBatch[]>(() => {
@@ -597,6 +648,18 @@ export default function App() {
     setSpeedRawDigits('');
   };
 
+  // Tạo hoặc nạp mẻ demo Ruộng Chú Năm Cò
+  const handleLoadDemoBatch = () => {
+    const demo = createDemoBatch();
+    setBatches((prev) => {
+      const filtered = prev.filter((b) => b.id !== demo.id);
+      return [demo, ...filtered];
+    });
+    setCurrentBatchId(demo.id);
+    setCurrentInput('');
+    setSpeedRawDigits('');
+  };
+
   // Switch batch
   const handleSelectBatch = (batchId: string) => {
     setCurrentBatchId(batchId);
@@ -696,6 +759,24 @@ export default function App() {
 
       {/* MAIN CONTAINER */}
       <main className="flex-1 w-full max-w-4xl mx-auto flex flex-col">
+        {/* Banner thông báo chế độ Demo Ruộng Chú Năm Cò */}
+        {currentBatch.id === 'batch-demo-nam-co' && (
+          <div className="mx-3 mt-2 mb-1 p-2.5 bg-gradient-to-r from-amber-500/15 via-emerald-500/15 to-amber-500/15 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold">🌾 DEMO</span>
+              <span className="font-medium text-slate-700 dark:text-slate-200">
+                Bạn đang xem <strong>Mẻ mẫu Ruộng Chú Năm Cò (150 bao)</strong>. Thoải mái bấm thử Numpad, đổi giá hoặc mở HUD Nông Dân!
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCreateNewBatch}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shrink-0 shadow-sm transition-colors text-[11px]"
+            >
+              + Tạo Mẻ Mới
+            </button>
+          </div>
+        )}
         {/* KHU VỰC 2: MÀN HÌNH SỐ CÂN & CHỈ BÁO ÂM THANH */}
         <WeighingDisplay
           currentInput={currentInput}
@@ -833,6 +914,7 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={currentUser}
         onUserChanged={(u) => setCurrentUser(u)}
+        onStartDemoMode={handleLoadDemoBatch}
       />
 
       {/* MODAL QUẢN TRỊ TÀI KHOẢN (DÀNH CHO ADMIN) */}

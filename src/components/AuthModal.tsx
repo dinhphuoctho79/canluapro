@@ -7,6 +7,7 @@ interface AuthModalProps {
   onClose: () => void;
   currentUser: UserProfile | null;
   onUserChanged: (user: UserProfile | null) => void;
+  onStartDemoMode?: () => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -14,6 +15,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   currentUser,
   onUserChanged,
+  onStartDemoMode,
 }) => {
   const [tab, setTab] = useState<'login' | 'register' | 'change_password'>('login');
   const [phone, setPhone] = useState<string>('');
@@ -26,6 +28,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [successMsg, setSuccessMsg] = useState<string>('');
 
   if (!isOpen) return null;
+
+  const handleStartQuickDemo = () => {
+    const demoProfile: UserProfile = {
+      id: 'demo-trader-namco',
+      phone: '0988888888',
+      full_name: 'Thương Lái Út Lúa (Phiên Trải Nghiệm)',
+      role: 'trader',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    localStorage.setItem('canlua_user_profile', JSON.stringify(demoProfile));
+    onUserChanged(demoProfile);
+    if (onStartDemoMode) {
+      onStartDemoMode();
+    }
+    setSuccessMsg('Đã kích hoạt chế độ Demo: Ruộng Chú Năm Cò (150 bao)!');
+    setTimeout(() => {
+      onClose();
+    }, 600);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,6 +220,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         ) : (
           /* NẾU CHƯA ĐĂNG NHẬP */
           <div>
+            {/* NÚT TRẢI NGHIỆM NHANH (DEMO) */}
+            <div className="mb-4 p-3 bg-gradient-to-r from-emerald-500/10 via-amber-500/10 to-emerald-500/10 dark:from-emerald-950/40 dark:via-amber-950/30 dark:to-emerald-950/40 rounded-2xl border-2 border-dashed border-emerald-500/40 text-center">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mb-2 font-medium">
+                Dùng thử đầy đủ tính năng cân lúa ngoài bờ ruộng:
+              </p>
+              <button
+                type="button"
+                onClick={handleStartQuickDemo}
+                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+              >
+                <span>🌾</span>
+                <span>Trải Nghiệm Nhanh (Mẻ Ruộng Mẫu 150 Bao)</span>
+              </button>
+            </div>
+
             {/* Tabs chọn Đăng nhập / Đăng ký */}
             <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl mb-4 text-xs font-bold">
               <button

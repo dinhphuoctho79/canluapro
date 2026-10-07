@@ -24,23 +24,54 @@ export function useRealtimeBatchSync({
   useEffect(() => {
     if (!supabase || !targetRoom) return;
 
+    let isMounted = true;
     const channelName = `rice_batch_${targetRoom.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-    const channel = supabase.channel(channelName);
-    activeChannelRef.current = channel;
 
-    channel
-      .on('broadcast', { event: 'batch_update' }, ({ payload }) => {
-        if (!payload || !payload.id) return;
-        // Nếu chính mình vừa phát sóng, bỏ qua để tránh loop
-        if (isSelfBroadcastingRef.current) return;
+    const setupChannel = () => {
+      if (!supabase) return;
+      if (activeChannelRef.current) {
+        supabase.removeChannel(activeChannelRef.current);
+      }
 
-        onRemoteBatchReceived(payload as RiceBatch);
-      })
-      .subscribe();
+      const channel = supabase.channel(channelName);
+      activeChannelRef.current = channel;
+
+      channel
+        .on('broadcast', { event: 'batch_update' }, ({ payload }) => {
+          if (!payload || !payload.id) return;
+          // Nếu chính mình vừa phát sóng, bỏ qua để tránh echo loop
+          if (isSelfBroadcastingRef.current) return;
+
+          onRemoteBatchReceived(payload as RiceBatch);
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // Đã kết nối thành công WebSocket Realtime
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            // Tự động thử kết nối lại sau 3s nếu lỗi sóng 3G/4G
+            if (isMounted) {
+              setTimeout(setupChannel, 3000);
+            }
+          }
+        });
+    };
+
+    setupChannel();
+
+    // Tự động kết nối lại khi điện thoại bắt sóng mạng lại
+    const handleOnline = () => {
+      setupChannel();
+    };
+
+    window.addEventListener('online', handleOnline);
 
     return () => {
-      supabase.removeChannel(channel);
-      activeChannelRef.current = null;
+      isMounted = false;
+      window.removeEventListener('online', handleOnline);
+      if (activeChannelRef.current && supabase) {
+        supabase.removeChannel(activeChannelRef.current);
+        activeChannelRef.current = null;
+      }
     };
   }, [targetRoom, onRemoteBatchReceived]);
 

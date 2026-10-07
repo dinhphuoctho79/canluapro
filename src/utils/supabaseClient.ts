@@ -37,6 +37,13 @@ export function phoneToAuthEmail(phone: string): string {
   return `${clean}@canluapro.local`;
 }
 
+export const DEFAULT_ADMIN = {
+  phone: '0393990638',
+  password: 'CanluaPro@2026',
+  fullName: 'Admin Nguyễn Công Dinh (Cần Thơ)',
+  role: 'admin' as UserRole,
+};
+
 // 1. ĐĂNG NHẬP BẰNG SĐT + MẬT KHẨU
 export async function loginWithPhone(phone: string, password: string): Promise<{ profile: UserProfile | null; error: string | null }> {
   const cleanPhone = cleanPhoneNumber(phone);
@@ -45,6 +52,20 @@ export async function loginWithPhone(phone: string, password: string): Promise<{
   }
   if (!password || password.length < 6) {
     return { profile: null, error: 'Mật khẩu phải từ 6 ký tự trở lên' };
+  }
+
+  // Khởi tạo/nhận diện tài khoản Super Admin mặc định
+  if (cleanPhone === DEFAULT_ADMIN.phone && password === DEFAULT_ADMIN.password) {
+    const adminProfile: UserProfile = {
+      id: 'admin-super-0393990638',
+      phone: DEFAULT_ADMIN.phone,
+      full_name: DEFAULT_ADMIN.fullName,
+      role: 'admin',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    localStorage.setItem('canlua_user_profile', JSON.stringify(adminProfile));
+    return { profile: adminProfile, error: null };
   }
 
   // Nếu chưa cấu hình Supabase, dùng Local Session Demo
@@ -242,16 +263,24 @@ export async function updateUserPassword(newPassword: string): Promise<{ success
 // 6. DÀNH CHO ADMIN: LẤY DANH SÁCH TẤT CẢ NGƯỜI DÙNG
 export async function adminFetchProfiles(searchQuery: string = ''): Promise<{ profiles: UserProfile[]; error: string | null }> {
   if (!supabase) {
-    // Mock profiles cho admin trải nghiệm offline
-    const list: UserProfile[] = [
-      { id: '1', phone: '0393990638', full_name: 'Nguyễn Công Dinh (Tác giả)', role: 'admin', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    // Mock profiles cho admin trải nghiệm offline (kết hợp các user đã tạo)
+    const defaultList: UserProfile[] = [
+      { id: '1', phone: '0393990638', full_name: 'Nguyễn Công Dinh (Admin Cần Thơ)', role: 'admin', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
       { id: '2', phone: '0912345678', full_name: 'Chú Ba Ruộng Thới Lai', role: 'farmer', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
       { id: '3', phone: '0988888888', full_name: 'Thương Lái Út Lúa Tân Hưng', role: 'trader', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
     ];
-    if (searchQuery) {
-      return { profiles: list.filter(p => p.phone.includes(searchQuery) || p.full_name.toLowerCase().includes(searchQuery.toLowerCase())), error: null };
+    let customList: UserProfile[] = [];
+    try {
+      const stored = localStorage.getItem('canlua_mock_users');
+      if (stored) customList = JSON.parse(stored);
+    } catch {
+      // ignore
     }
-    return { profiles: list, error: null };
+    const combined = [...customList, ...defaultList.filter(d => !customList.some(c => c.phone === d.phone))];
+    if (searchQuery) {
+      return { profiles: combined.filter(p => p.phone.includes(searchQuery) || p.full_name.toLowerCase().includes(searchQuery.toLowerCase())), error: null };
+    }
+    return { profiles: combined, error: null };
   }
 
   try {
@@ -270,7 +299,17 @@ export async function adminFetchProfiles(searchQuery: string = ''): Promise<{ pr
 
 // 7. DÀNH CHO ADMIN: CẬP NHẬT VAI TRÒ (ROLE)
 export async function adminUpdateRole(userId: string, newRole: UserRole): Promise<{ success: boolean; error: string | null }> {
-  if (!supabase) return { success: true, error: null };
+  if (!supabase) {
+    try {
+      const stored = localStorage.getItem('canlua_mock_users');
+      let list: UserProfile[] = stored ? JSON.parse(stored) : [];
+      list = list.map(u => u.id === userId ? { ...u, role: newRole, updated_at: new Date().toISOString() } : u);
+      localStorage.setItem('canlua_mock_users', JSON.stringify(list));
+    } catch {
+      // ignore
+    }
+    return { success: true, error: null };
+  }
 
   try {
     const { error } = await supabase
@@ -284,3 +323,75 @@ export async function adminUpdateRole(userId: string, newRole: UserRole): Promis
     return { success: false, error: err instanceof Error ? err.message : 'Lỗi cập nhật quyền' };
   }
 }
+
+// 8. DÀNH CHO ADMIN: TẠO TÀI KHOẢN MỚI TRỰC TIẾP CHO BẠN HÀNG/THƯƠNG LÁI
+export async function adminCreateUser(
+  phone: string,
+  fullName: string,
+  initialPassword: string,
+  role: UserRole
+): Promise<{ profile: UserProfile | null; error: string | null }> {
+  const cleanPhone = cleanPhoneNumber(phone);
+  if (!cleanPhone || cleanPhone.length < 9) {
+    return { profile: null, error: 'Số điện thoại không hợp lệ' };
+  }
+  if (!fullName.trim()) {
+    return { profile: null, error: 'Vui lòng nhập họ và tên' };
+  }
+  if (!initialPassword || initialPassword.length < 6) {
+    return { profile: null, error: 'Mật khẩu khởi tạo phải từ 6 ký tự trở lên' };
+  }
+
+  if (!supabase) {
+    const newProfile: UserProfile = {
+      id: `local-created-${Date.now()}`,
+      phone: cleanPhone,
+      full_name: fullName.trim(),
+      role,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const stored = localStorage.getItem('canlua_mock_users');
+      const list: UserProfile[] = stored ? JSON.parse(stored) : [];
+      list.unshift(newProfile);
+      localStorage.setItem('canlua_mock_users', JSON.stringify(list));
+    } catch {
+      // ignore
+    }
+    return { profile: newProfile, error: null };
+  }
+
+  try {
+    const email = phoneToAuthEmail(cleanPhone);
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password: initialPassword,
+      options: {
+        data: {
+          phone: cleanPhone,
+          full_name: fullName.trim(),
+          role,
+        },
+      },
+    });
+
+    if (authError) return { profile: null, error: authError.message };
+    if (!authData.user) return { profile: null, error: 'Không thể tạo user' };
+
+    const newProfile: UserProfile = {
+      id: authData.user.id,
+      phone: cleanPhone,
+      full_name: fullName.trim(),
+      role,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await supabase.from('profiles').upsert([newProfile]);
+    return { profile: newProfile, error: null };
+  } catch (err: unknown) {
+    return { profile: null, error: err instanceof Error ? err.message : 'Lỗi kết nối tạo tài khoản' };
+  }
+}
+

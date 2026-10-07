@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Users, Shield, KeyRound, Check, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { UserProfile, UserRole, adminFetchProfiles, adminUpdateRole, updateUserPassword } from '../utils/supabaseClient';
+import { X, Search, Users, Shield, KeyRound, Check, RefreshCw, AlertCircle, CheckCircle2, UserPlus, Plus } from 'lucide-react';
+import { UserProfile, UserRole, adminFetchProfiles, adminUpdateRole, updateUserPassword, adminCreateUser } from '../utils/supabaseClient';
 
 interface AdminUsersModalProps {
   isOpen: boolean;
@@ -14,6 +14,14 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Form tạo tài khoản mới
+  const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+  const [newPhone, setNewPhone] = useState<string>('');
+  const [newName, setNewName] = useState<string>('');
+  const [newPass, setNewPass] = useState<string>('');
+  const [newRole, setNewRole] = useState<UserRole>('trader');
+  const [isCreating, setIsCreating] = useState<boolean>(false);
 
   const loadData = async (query: string = '') => {
     setIsLoading(true);
@@ -34,6 +42,25 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
     const val = e.target.value;
     setSearch(val);
     loadData(val);
+  };
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreating(true);
+    const { profile, error } = await adminCreateUser(newPhone, newName, newPass, newRole);
+    setIsCreating(false);
+
+    if (error) {
+      setNotification({ type: 'error', message: error });
+    } else if (profile) {
+      setNotification({ type: 'success', message: `Đã tạo tài khoản cho ${profile.full_name} (${profile.phone})` });
+      setShowCreateForm(false);
+      setNewPhone('');
+      setNewName('');
+      setNewPass('');
+      loadData(search);
+    }
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
@@ -104,17 +131,91 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
           </div>
         )}
 
-        {/* Ô tìm kiếm nhanh */}
-        <div className="relative mb-3 shrink-0">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Tìm theo số điện thoại hoặc họ tên..."
-            value={search}
-            onChange={handleSearchChange}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-          />
+        {/* Hàng tìm kiếm & nút tạo tài khoản */}
+        <div className="flex gap-2 mb-3 shrink-0">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Tìm theo số điện thoại hoặc họ tên..."
+              value={search}
+              onChange={handleSearchChange}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+          >
+            {showCreateForm ? <X className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+            <span>{showCreateForm ? 'Đóng Form' : 'Tạo Tài Khoản'}</span>
+          </button>
         </div>
+
+        {/* Form tạo tài khoản trực tiếp (Admin cấp quyền cho bạn hàng) */}
+        {showCreateForm && (
+          <form
+            onSubmit={handleCreateSubmit}
+            className="mb-3 p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-2.5 shrink-0 animate-in slide-in-from-top-2"
+          >
+            <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+              <Plus className="w-4 h-4" />
+              <span>Cấp tài khoản mới cho Bạn Hàng / Thương Lái:</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <input
+                type="tel"
+                placeholder="Số điện thoại (VD: 0988776655)"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                required
+                className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 font-mono outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Họ và tên (VD: Út Cò Tân Hưng)"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                required
+                className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Mật khẩu ban đầu (>= 6 ký tự)"
+                value={newPass}
+                onChange={(e) => setNewPass(e.target.value)}
+                required
+                className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 font-mono outline-none"
+              />
+              <select
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as UserRole)}
+                className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 font-bold outline-none cursor-pointer"
+              >
+                <option value="trader">⚖️ Thương Lái / Thợ Cân</option>
+                <option value="farmer">🌾 Nông Dân (Chủ Ruộng)</option>
+                <option value="admin">👑 Quản Trị Viên (Admin)</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-xs rounded-xl font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl font-bold transition-all disabled:opacity-50"
+              >
+                {isCreating ? 'Đang tạo...' : 'Xác Nhận Cấp Tài Khoản'}
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Danh sách người dùng */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
