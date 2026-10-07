@@ -115,13 +115,17 @@ export const FarmerCompanionModal: React.FC<FarmerCompanionModalProps> = ({
   });
   const lastBag = allBags[allBags.length - 1];
 
-  // Sinh mã QR kèm param ?mode=farmer để bà con quét xem trực tiếp
+  // Sinh mã QR kèm param ?mode=farmer & ?room=[MÃ_MẺ] để bà con quét xem trực tiếp
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
     try {
       const urlObj = new URL(window.location.href);
       urlObj.searchParams.set('mode', 'farmer');
-      if (batch.code) urlObj.searchParams.set('batch', batch.code);
+      const roomIdentifier = batch.code || batch.id;
+      if (roomIdentifier) {
+        urlObj.searchParams.set('room', roomIdentifier);
+        urlObj.searchParams.set('batch', roomIdentifier);
+      }
       QRCode.toDataURL(urlObj.toString(), {
         width: 240,
         margin: 1,
@@ -132,7 +136,7 @@ export const FarmerCompanionModal: React.FC<FarmerCompanionModalProps> = ({
     } catch {
       // fallback
     }
-  }, [isOpen, batch.code]);
+  }, [isOpen, batch.code, batch.id]);
 
   if (!isOpen) return null;
 

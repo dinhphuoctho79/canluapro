@@ -317,10 +317,16 @@ export default function App() {
     setIsVoiceActive(enabled);
   };
 
-  // Room code từ URL (?room=CLP-20261007-01)
+  // Room code từ URL (?room=CLP-20261007-01 hoặc ?batch=CLP-20261007-01)
   const urlRoomCode = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('room') || undefined
+    ? (new URLSearchParams(window.location.search).get('room') ||
+       new URLSearchParams(window.location.search).get('batch') ||
+       undefined)
     : undefined;
+
+  const isFarmerModeUrl = typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).get('mode') === 'farmer' ||
+     new URLSearchParams(window.location.search).get('hud') === '1');
 
   // Lắng nghe dữ liệu Realtime đồng bộ từ WebSocket Supabase
   const handleRemoteBatchReceived = useCallback((syncedBatch: RiceBatch) => {
@@ -339,7 +345,7 @@ export default function App() {
   const { broadcastBatch } = useRealtimeBatchSync({
     batch: currentBatch,
     roomCode: urlRoomCode,
-    isViewerOnly: currentUser?.role === 'farmer',
+    isViewerOnly: isFarmerModeUrl || currentUser?.role === 'farmer',
     onRemoteBatchReceived: handleRemoteBatchReceived,
   });
 
@@ -721,9 +727,6 @@ export default function App() {
   });
 
   // Khi nông dân quét mã QR (URL có ?mode=farmer hoặc ?hud=1) hoặc tài khoản có role farmer, khóa và chỉ hiển thị Farmer HUD Read-Only
-  const isFarmerModeUrl = typeof window !== 'undefined' &&
-    (new URLSearchParams(window.location.search).get('mode') === 'farmer' ||
-     new URLSearchParams(window.location.search).get('hud') === '1');
   const isFarmerMode = isFarmerModeUrl || currentUser?.role === 'farmer';
 
   if (isFarmerMode) {

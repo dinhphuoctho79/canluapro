@@ -33,7 +33,15 @@ export function useRealtimeBatchSync({
         supabase.removeChannel(activeChannelRef.current);
       }
 
-      const channel = supabase.channel(channelName);
+      // Kênh WebSocket Realtime cho phép người dùng khách (Guest / Anonymous) không cần đăng nhập vẫn nhận được dữ liệu khi quét QR
+      const channel = supabase.channel(channelName, {
+        config: {
+          broadcast: {
+            self: false, // Không nhận lại broadcast của chính mình
+            ack: false,
+          },
+        },
+      });
       activeChannelRef.current = channel;
 
       channel
@@ -44,9 +52,26 @@ export function useRealtimeBatchSync({
 
           onRemoteBatchReceived(payload as RiceBatch);
         })
+        .on('broadcast', { event: 'request_latest_batch' }, () => {
+          // Khi máy điện thoại nông dân vừa quét QR vào phòng, máy thợ cân phát ngay mẻ hiện tại
+          if (!isViewerOnly && batch && activeChannelRef.current) {
+            activeChannelRef.current.send({
+              type: 'broadcast',
+              event: 'batch_update',
+              payload: batch,
+            });
+          }
+        })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            // Đã kết nối thành công WebSocket Realtime
+            // Nếu là máy nông dân vừa kết nối thành công, chủ động yêu cầu máy thợ cân gửi dữ liệu mới nhất
+            if (isViewerOnly && channel) {
+              channel.send({
+                type: 'broadcast',
+                event: 'request_latest_batch',
+                payload: { requester: 'farmer_hud' },
+              });
+            }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             // Tự động thử kết nối lại sau 3s nếu lỗi sóng 3G/4G
             if (isMounted) {
@@ -73,7 +98,7 @@ export function useRealtimeBatchSync({
         activeChannelRef.current = null;
       }
     };
-  }, [targetRoom, onRemoteBatchReceived]);
+  }, [targetRoom, isViewerOnly, batch, onRemoteBatchReceived]);
 
   // Hàm phát sóng dữ liệu (cho thợ cân khi nhập cân)
   const broadcastBatch = useCallback(
