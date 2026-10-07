@@ -118,6 +118,14 @@ export const ErgonomicNumpad: React.FC<ErgonomicNumpadProps> = ({
     });
   };
 
+  const handleManualSubmit = useCallback(() => {
+    if (autoCommitTimerRef.current) {
+      clearTimeout(autoCommitTimerRef.current);
+      autoCommitTimerRef.current = null;
+    }
+    onSubmit();
+  }, [onSubmit]);
+
   // Physical keyboard listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -146,7 +154,7 @@ export const ErgonomicNumpad: React.FC<ErgonomicNumpadProps> = ({
         }
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        handlePress(onSubmit);
+        handlePress(handleManualSubmit);
       } else if (e.key === '+') {
         e.preventDefault();
         handleInstantDialMark(0.2);
@@ -161,7 +169,7 @@ export const ErgonomicNumpad: React.FC<ErgonomicNumpadProps> = ({
     onDigit,
     onDecimal,
     onBackspace,
-    onSubmit,
+    handleManualSubmit,
     onSpeedDigit,
     onSpeedBackspace,
     tensLock,
@@ -379,7 +387,7 @@ export const ErgonomicNumpad: React.FC<ErgonomicNumpadProps> = ({
         {/* NHẬP button spans row 3 and row 4 (2 rows tall) */}
         <button
           type="button"
-          onClick={() => handlePress(onSubmit)}
+          onClick={() => handlePress(handleManualSubmit)}
           className="row-span-2 min-h-[136px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 active:scale-[0.98] transition-all flex flex-col items-center justify-center text-white shadow-lg shadow-emerald-700/25 border-2 border-emerald-500 text-center px-1"
         >
           <CornerDownLeft className="w-8 h-8 stroke-[2.8] mb-1" />

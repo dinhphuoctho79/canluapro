@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, WifiOff, Sun, Moon, User, Wheat, DollarSign, ShieldCheck, History, PlusCircle, Volume2, VolumeX, Settings } from 'lucide-react';
+import { Wifi, WifiOff, Sun, Moon, User, Wheat, DollarSign, ShieldCheck, History, PlusCircle, Volume2, VolumeX, Settings, Shield, LogIn, Eye } from 'lucide-react';
 import { RiceBatch } from '../types';
 import { formatNumberWithDots, parseNumberFromDots, readVietnameseMoney } from '../utils/numberToWords';
+import { UserProfile } from '../utils/supabaseClient';
 
 interface HeaderInfoProps {
   batch: RiceBatch;
@@ -14,6 +15,10 @@ interface HeaderInfoProps {
   isVoiceActive: boolean;
   onToggleVoice: () => void;
   onOpenSettings: () => void;
+  currentUser?: UserProfile | null;
+  onOpenAuth?: () => void;
+  onOpenAdmin?: () => void;
+  onOpenFarmerDisplay?: () => void;
 }
 
 export const POPULAR_RICE_VARIETIES = [
@@ -40,6 +45,10 @@ export const HeaderInfo: React.FC<HeaderInfoProps> = ({
   isVoiceActive,
   onToggleVoice,
   onOpenSettings,
+  currentUser,
+  onOpenAuth,
+  onOpenAdmin,
+  onOpenFarmerDisplay,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
 
@@ -119,10 +128,52 @@ export const HeaderInfo: React.FC<HeaderInfoProps> = ({
         </div>
 
         {/* Action icons */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5">
+          {/* Nút Xem HUD nông dân */}
+          {onOpenFarmerDisplay && (
+            <button
+              onClick={onOpenFarmerDisplay}
+              className="p-1.5 sm:p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-800 transition-colors flex items-center gap-1 text-xs font-bold"
+              title="Mở màn hình nông dân xem"
+            >
+              <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden md:inline">HUD Nông Dân</span>
+            </button>
+          )}
+
+          {/* Nút Admin (chỉ hiện khi user.role === 'admin') */}
+          {currentUser?.role === 'admin' && onOpenAdmin && (
+            <button
+              onClick={onOpenAdmin}
+              className="p-1.5 sm:p-2 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800 transition-colors flex items-center gap-1 text-xs font-bold animate-pulse"
+              title="Quản trị người dùng & mật khẩu"
+            >
+              <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
+              <span className="hidden md:inline">Quản Trị</span>
+            </button>
+          )}
+
+          {/* Nút Đăng nhập / Tài khoản */}
+          {onOpenAuth && (
+            <button
+              onClick={onOpenAuth}
+              className={`p-1.5 sm:p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 border ${
+                currentUser
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700'
+                  : 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700'
+              }`}
+              title={currentUser ? `Tài khoản: ${currentUser.full_name} (${currentUser.phone})` : 'Đăng nhập SĐT'}
+            >
+              {currentUser ? <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" /> : <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+              <span className="hidden xs:inline truncate max-w-[80px] sm:max-w-[100px]">
+                {currentUser ? currentUser.full_name.split(' ').pop() : 'Đăng Nhập'}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={onOpenSettings}
-            className="relative p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs font-bold"
+            className="relative p-1.5 sm:p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs font-bold"
             title="Cài đặt hậu cần & nâng cao"
           >
             <Settings className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />

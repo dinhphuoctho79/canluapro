@@ -13,6 +13,10 @@ import { ZaloExportModal } from './components/ZaloExportModal';
 import { SheetsSyncModal } from './components/SheetsSyncModal';
 import { HistoryModal } from './components/HistoryModal';
 import { SettingsModal } from './components/SettingsModal';
+import { AuthModal } from './components/AuthModal';
+import { AdminUsersModal } from './components/AdminUsersModal';
+import { UserProfile, getCurrentUserProfile } from './utils/supabaseClient';
+import { useRealtimeBatchSync } from './utils/useRealtimeSync';
 
 const STORAGE_KEY = 'canlua_mientay_batches_v3';
 const CURRENT_ID_KEY = 'canlua_current_batch_id_v3';
@@ -77,6 +81,14 @@ export default function App() {
 
   const [currentBatchId, setCurrentBatchId] = useState<string>(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const batchParam = params.get('batch');
+        if (batchParam) {
+          const found = batches.find((b) => b.id === batchParam || b.code === batchParam);
+          if (found) return found.id;
+        }
+      }
       const id = localStorage.getItem(CURRENT_ID_KEY);
       if (id) return id;
     } catch {
@@ -169,6 +181,17 @@ export default function App() {
   const [isSheetsSyncOpen, setIsSheetsSyncOpen] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [isAdminUsersModalOpen, setIsAdminUsersModalOpen] = useState<boolean>(false);
+
+  // Người dùng hiện tại & phân quyền (farmer / trader / admin)
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    getCurrentUserProfile().then((user) => {
+      if (user) setCurrentUser(user);
+    });
+  }, []);
 
   // Abnormal weight alert modal
   const [abnormalWarning, setAbnormalWarning] = useState<{
@@ -243,13 +266,70 @@ export default function App() {
     setIsVoiceActive(enabled);
   };
 
+  // Room code từ URL (?room=CLP-20261007-01)
+  const urlRoomCode = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('room') || undefined
+    : undefined;
+
+  // Lắng nghe dữ liệu Realtime đồng bộ từ WebSocket Supabase
+  const handleRemoteBatchReceived = useCallback((syncedBatch: RiceBatch) => {
+    setBatches((prev) => {
+      const exists = prev.some((b) => b.id === syncedBatch.id || b.code === syncedBatch.code);
+      if (exists) {
+        return prev.map((b) => (b.id === syncedBatch.id || b.code === syncedBatch.code ? syncedBatch : b));
+      }
+      return [syncedBatch, ...prev];
+    });
+    if (syncedBatch.id) {
+      setCurrentBatchId(syncedBatch.id);
+    }
+  }, []);
+
+  const { broadcastBatch } = useRealtimeBatchSync({
+    batch: currentBatch,
+    roomCode: urlRoomCode,
+    isViewerOnly: currentUser?.role === 'farmer',
+    onRemoteBatchReceived: handleRemoteBatchReceived,
+  });
+
   const handleUpdateBatch = useCallback(
     (updates: Partial<RiceBatch>) => {
       setBatches((prev) =>
-        prev.map((b) => (b.id === currentBatch.id ? { ...b, ...updates, updatedAt: Date.now() } : b))
+        prev.map((b) => {
+          if (b.id !== currentBatch.id) return b;
+          const updated = { ...b, ...updates, updatedAt: Date.now() };
+
+          // Automatically sync pricePerKg, tareWeightPerBag, riceVariety to active lot or single lot
+          if (
+            updates.pricePerKg !== undefined ||
+            updates.tareWeightPerBag !== undefined ||
+            updates.riceVariety !== undefined
+          ) {
+            const currentLots = updated.lots || [];
+            if (currentLots.length > 0) {
+              const targetLotId = updated.activeLotId || currentLots[0].id;
+              updated.lots = currentLots.map((l) => {
+                if (currentLots.length === 1 || l.id === targetLotId) {
+                  return {
+                    ...l,
+                    pricePerKg: updates.pricePerKg !== undefined ? updates.pricePerKg : l.pricePerKg,
+                    tareWeightPerBag: updates.tareWeightPerBag !== undefined ? updates.tareWeightPerBag : l.tareWeightPerBag,
+                    riceVariety: updates.riceVariety !== undefined ? updates.riceVariety : l.riceVariety,
+                  };
+                }
+                return l;
+              });
+            }
+          }
+
+          // Phát sóng thay đổi realtime tới mọi điện thoại đang kết nối
+          broadcastBatch(updated);
+
+          return updated;
+        })
       );
     },
-    [currentBatch.id]
+    [currentBatch.id, broadcastBatch]
   );
 
   // Lots handlers
@@ -417,25 +497,31 @@ export default function App() {
   );
 
   // Submit button handler
-  const handleSubmitWeight = useCallback(() => {
-    if (!currentInput.trim()) return;
-    const weight = parseFloat(currentInput);
-    if (isNaN(weight) || weight <= 0) return;
+  const handleSubmitWeight = useCallback(
+    (overrideWeight?: number) => {
+      let weight = overrideWeight;
+      if (typeof weight !== 'number') {
+        if (!currentInput.trim()) return;
+        weight = parseFloat(currentInput.replace(',', '.'));
+      }
+      if (isNaN(weight) || weight <= 0) return;
 
-    // Check abnormal weight threshold (< 35kg or > 75kg)
-    if (weight < 35 || weight > 75) {
-      audioManager.playWarningAlert();
-      audioManager.triggerHaptic(60);
-      setAbnormalWarning({
-        isOpen: true,
-        weight,
-        bagIndex: (activeLot ? activeLot.bags.length : currentBatch.bags.length) + 1,
-      });
-      return;
-    }
+      // Check abnormal weight threshold (< 35kg or > 75kg)
+      if (weight < 35 || weight > 75) {
+        audioManager.playWarningAlert();
+        audioManager.triggerHaptic(60);
+        setAbnormalWarning({
+          isOpen: true,
+          weight,
+          bagIndex: (activeLot ? activeLot.bags.length : currentBatch.bags.length) + 1,
+        });
+        return;
+      }
 
-    addBagDirectly(weight);
-  }, [currentInput, activeLot, currentBatch.bags.length, addBagDirectly]);
+      addBagDirectly(weight);
+    },
+    [currentInput, activeLot, currentBatch.bags.length, addBagDirectly]
+  );
 
   // Abnormal confirmation handler
   const handleConfirmAbnormalWeight = () => {
@@ -545,9 +631,13 @@ export default function App() {
   let displayGross = 0;
   let displayCalcTare = 0;
   lotsForDisplay.forEach((l) => {
+    const lTarePerBag = typeof l.tareWeightPerBag === 'number' && l.tareWeightPerBag >= 0
+      ? l.tareWeightPerBag
+      : (typeof currentBatch.tareWeightPerBag === 'number' ? currentBatch.tareWeightPerBag : 0.2);
+
     displayTotalBags += l.bags.length;
     displayGross += l.bags.reduce((s, b) => s + b.weight, 0);
-    displayCalcTare += l.bags.length * (l.tareWeightPerBag ?? currentBatch.tareWeightPerBag ?? 0.2);
+    displayCalcTare += l.bags.length * lTarePerBag;
   });
   const displayFlatTare = currentBatch.flatTareAmount || 0;
   const displayTotalTare = displayFlatTare > 0 ? displayFlatTare : displayCalcTare;
@@ -555,11 +645,34 @@ export default function App() {
   let displayTotalAmount = 0;
   lotsForDisplay.forEach((l) => {
     const lGross = l.bags.reduce((s, b) => s + b.weight, 0);
-    const lShare = displayGross > 0 ? lGross / displayGross : 1;
-    const lTare = displayFlatTare > 0 ? displayFlatTare * lShare : l.bags.length * (l.tareWeightPerBag ?? currentBatch.tareWeightPerBag ?? 0.2);
+    const lShare = displayGross > 0 ? lGross / displayGross : (lotsForDisplay.length === 1 ? 1 : 1 / lotsForDisplay.length);
+    const lTarePerBag = typeof l.tareWeightPerBag === 'number' && l.tareWeightPerBag >= 0
+      ? l.tareWeightPerBag
+      : (typeof currentBatch.tareWeightPerBag === 'number' ? currentBatch.tareWeightPerBag : 0.2);
+    const lTare = displayFlatTare > 0 ? displayFlatTare * lShare : l.bags.length * lTarePerBag;
     const lNet = Math.max(0, lGross - lTare);
-    displayTotalAmount += Math.round(lNet * l.pricePerKg);
+    const lPrice = (typeof l.pricePerKg === 'number' && l.pricePerKg > 0)
+      ? l.pricePerKg
+      : (currentBatch.pricePerKg || 0);
+    displayTotalAmount += Math.round(lNet * lPrice);
   });
+
+  // Khi nông dân quét mã QR (URL có ?mode=farmer hoặc ?hud=1) hoặc tài khoản có role farmer, khóa và chỉ hiển thị Farmer HUD Read-Only
+  const isFarmerModeUrl = typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).get('mode') === 'farmer' ||
+     new URLSearchParams(window.location.search).get('hud') === '1');
+  const isFarmerMode = isFarmerModeUrl || currentUser?.role === 'farmer';
+
+  if (isFarmerMode) {
+    return (
+      <FarmerCompanionModal
+        batch={currentBatch}
+        isOpen={true}
+        onClose={() => {}}
+        isReadOnlyHUD={true}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 transition-colors flex flex-col font-sans pb-12">
@@ -575,6 +688,10 @@ export default function App() {
         isVoiceActive={isVoiceActive}
         onToggleVoice={handleToggleVoice}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        currentUser={currentUser}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenAdmin={() => setIsAdminUsersModalOpen(true)}
+        onOpenFarmerDisplay={() => setIsFarmerDisplayOpen(true)}
       />
 
       {/* MAIN CONTAINER */}
@@ -708,6 +825,20 @@ export default function App() {
         onSelectBatch={handleSelectBatch}
         onNewBatch={handleCreateNewBatch}
         onDeleteBatch={handleDeleteBatch}
+      />
+
+      {/* MODAL XÁC THỰC TÀI KHOẢN (ĐĂNG NHẬP / ĐĂNG KÝ SĐT) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={currentUser}
+        onUserChanged={(u) => setCurrentUser(u)}
+      />
+
+      {/* MODAL QUẢN TRỊ TÀI KHOẢN (DÀNH CHO ADMIN) */}
+      <AdminUsersModal
+        isOpen={isAdminUsersModalOpen}
+        onClose={() => setIsAdminUsersModalOpen(false)}
       />
     </div>
   );

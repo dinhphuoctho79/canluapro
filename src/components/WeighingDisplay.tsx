@@ -105,6 +105,51 @@ export const WeighingDisplay: React.FC<WeighingDisplayProps> = ({
           </div>
         </div>
 
+        {/* Live Realtime Mini Dashboard for Totals */}
+        <div className="relative z-10 mt-2 pt-2 border-t border-slate-800/90 grid grid-cols-3 gap-1.5 sm:gap-2">
+          {/* Stat 1: Tổng số bao */}
+          <div className="bg-slate-900/80 rounded-xl p-2 border border-slate-800 flex flex-col justify-center">
+            <span className="text-[10px] text-slate-400 uppercase font-mono font-medium tracking-wider">
+              Tổng số bao
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="font-mono text-lg sm:text-xl font-black text-white">
+                {totalBags}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400 font-bold">
+                bao
+              </span>
+            </div>
+          </div>
+
+          {/* Stat 2: Tổng ký tịnh */}
+          <div className="bg-slate-900/80 rounded-xl p-2 border border-slate-800 flex flex-col justify-center">
+            <span className="text-[10px] text-emerald-400/90 uppercase font-mono font-medium tracking-wider">
+              Tổng ký tịnh
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="font-mono text-lg sm:text-xl font-black text-emerald-400">
+                {totalNetWeight.toLocaleString('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                kg
+              </span>
+            </div>
+          </div>
+
+          {/* Stat 3: Thành tiền tạm tính */}
+          <div className="bg-amber-950/40 rounded-xl p-2 border border-amber-900/50 flex flex-col justify-center">
+            <span className="text-[10px] text-amber-400 uppercase font-mono font-medium tracking-wider">
+              Thành tiền
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5 truncate">
+              <span className="font-mono text-base sm:text-lg font-black text-amber-300 truncate">
+                {formatVND(totalAmount)}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {weighingMode === 'bluetooth' && (
           <div className="relative z-10 mt-2 pt-2 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
             <span className="flex items-center gap-1 text-[11px]">

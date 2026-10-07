@@ -107,6 +107,13 @@ export function readVietnameseWeight(num: number): string {
   return `${integerStr} phẩy ${decText} ki-lô-gam`;
 }
 
+export function readVietnameseBags(num: number): string {
+  if (isNaN(num) || num <= 0) return 'Không bao';
+  const integerPart = Math.round(num);
+  const integerStr = readVietnameseMoney(integerPart).replace(' đồng chẵn', '');
+  return `${integerStr} bao`;
+}
+
 
 export function formatNumberWithDots(val: number | string): string {
   if (val === undefined || val === null || val === '' || val === 0 || val === '0') return '';

@@ -57,7 +57,10 @@ export const FinancialSummary: React.FC<FinancialSummaryProps> = ({
   const initialLotsSummary = lots.map((lot) => {
     const bagCount = lot.bags.length;
     const gross = lot.bags.reduce((acc, b) => acc + b.weight, 0);
-    const tare = bagCount * (lot.tareWeightPerBag ?? batch.tareWeightPerBag ?? 0.2);
+    const tarePerBag = typeof lot.tareWeightPerBag === 'number' && lot.tareWeightPerBag >= 0
+      ? lot.tareWeightPerBag
+      : (typeof batch.tareWeightPerBag === 'number' ? batch.tareWeightPerBag : 0.2);
+    const tare = bagCount * tarePerBag;
 
     grandTotalBags += bagCount;
     grandGrossWeight += gross;
@@ -80,7 +83,10 @@ export const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     const lotShare = grandGrossWeight > 0 ? item.gross / grandGrossWeight : (initialLotsSummary.length === 1 ? 1 : 1 / initialLotsSummary.length);
     const lotTare = flatTare > 0 ? flatTare * lotShare : item.tare;
     const net = Math.max(0, item.gross - lotTare);
-    const amount = Math.round(net * item.lot.pricePerKg);
+    const effectivePrice = (typeof item.lot.pricePerKg === 'number' && item.lot.pricePerKg > 0)
+      ? item.lot.pricePerKg
+      : (batch.pricePerKg || 0);
+    const amount = Math.round(net * effectivePrice);
 
     grandTotalAmount += amount;
 
@@ -100,14 +106,14 @@ export const FinancialSummary: React.FC<FinancialSummaryProps> = ({
   const brokerFeePerKg = batch.brokerFeePerKg || 0;
   const totalBrokerFee = grandNetWeight * brokerFeePerKg;
 
-  // Final payout calculation
+  // Final payout calculation - KHÔNG dùng Math.max(0, finalPayout) để tránh nuốt số âm khi cọc lớn hơn tiền lúa
   let finalPayout = grandTotalAmount - (batch.depositAmount || 0);
   if (porterPayer === 'farmer') {
     finalPayout -= totalPorterageFee;
   } else if (porterPayer === 'split') {
     finalPayout -= totalPorterageFee / 2;
   }
-  finalPayout = Math.max(0, finalPayout);
+  const isFarmerOwing = finalPayout < 0;
 
   let buyerPorterShare = 0;
   if (porterPayer === 'buyer') buyerPorterShare = totalPorterageFee;
@@ -380,12 +386,22 @@ export const FinancialSummary: React.FC<FinancialSummaryProps> = ({
           </div>
         </div>
 
-        {/* BIG PAYOUT HIGHLIGHT: TIỀN CÒN LẠI TRẢ NÔNG DÂN */}
-        <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-r from-emerald-950 via-emerald-900 to-slate-900 border-2 border-emerald-500/80 shadow-lg flex flex-col gap-2">
+        {/* BIG PAYOUT HIGHLIGHT: TIỀN CÒN LẠI TRẢ NÔNG DÂN / NÔNG DÂN CÒN THIẾU LẠI LÁI */}
+        <div
+          className={`p-3.5 sm:p-4 rounded-xl border-2 shadow-lg flex flex-col gap-2 transition-colors ${
+            isFarmerOwing
+              ? 'bg-gradient-to-r from-amber-950 via-rose-950 to-slate-900 border-amber-500/90'
+              : 'bg-gradient-to-r from-emerald-950 via-emerald-900 to-slate-900 border-emerald-500/80'
+          }`}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <div>
-              <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider block">
-                TIỀN CÒN LẠI TRẢ NÔNG DÂN
+              <span
+                className={`text-[11px] font-bold uppercase tracking-wider block ${
+                  isFarmerOwing ? 'text-amber-400' : 'text-emerald-300'
+                }`}
+              >
+                {isFarmerOwing ? '⚠️ NÔNG DÂN CÒN THIẾU LẠI LÁI' : 'TIỀN CÒN LẠI TRẢ NÔNG DÂN'}
               </span>
               <span className="text-xs text-slate-300">
                 ({batch.farmerName || 'Chủ ruộng'} · {grandTotalBags} bao lúa
@@ -394,14 +410,27 @@ export const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             </div>
 
             <div className="text-left sm:text-right">
-              <span className="font-mono-num text-3xl sm:text-4xl font-black text-[#4ADE80] drop-shadow-[0_0_15px_rgba(74,222,128,0.35)] block">
-                {formatVND(finalPayout)}
+              <span
+                className={`font-mono-num text-3xl sm:text-4xl font-black block drop-shadow-md ${
+                  isFarmerOwing ? 'text-[#f59e0b]' : 'text-[#10b981]'
+                }`}
+              >
+                {isFarmerOwing ? `-${formatVND(Math.abs(finalPayout))}` : formatVND(finalPayout)}
               </span>
             </div>
           </div>
 
-          <div className="mt-1 pt-1 border-t border-emerald-500/30 text-xs font-semibold text-emerald-200 italic">
-            Bằng chữ: <span className="font-bold text-yellow-300">{readVietnameseMoney(finalPayout)}</span>
+          <div
+            className={`mt-1 pt-1 border-t text-xs font-semibold italic ${
+              isFarmerOwing ? 'border-amber-500/40 text-amber-200' : 'border-emerald-500/30 text-emerald-200'
+            }`}
+          >
+            Bằng chữ:{' '}
+            <span className={`font-bold ${isFarmerOwing ? 'text-amber-300' : 'text-yellow-300'}`}>
+              {isFarmerOwing
+                ? `Chủ ruộng còn thiếu lại thương lái ${readVietnameseMoney(Math.abs(finalPayout)).toLowerCase()}`
+                : readVietnameseMoney(finalPayout)}
+            </span>
           </div>
         </div>
       </div>

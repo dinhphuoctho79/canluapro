@@ -52,7 +52,10 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
     const gWeight = l.bags.reduce((acc, b) => acc + b.weight, 0);
     const tWeight = bCount * l.tareWeightPerBag;
     const nWeight = Math.max(0, gWeight - tWeight);
-    const amt = Math.round(nWeight * l.pricePerKg);
+    const effectivePrice = (typeof l.pricePerKg === 'number' && l.pricePerKg > 0)
+      ? l.pricePerKg
+      : (batch.pricePerKg || 0);
+    const amt = Math.round(nWeight * effectivePrice);
 
     totalBags += bCount;
     grossWeight += gWeight;
