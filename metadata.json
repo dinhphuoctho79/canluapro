@@ -1,0 +1,6 @@
+{
+  "name": "Cân Lúa Miền Tây - Cân Lúa Thu Mua Bờ Ruộng ĐBSCL",
+  "description": "Ứng dụng cân lúa thu mua nông sản tại bờ ruộng cho 13 tỉnh Đồng bằng sông Cửu Long, bàn phím số 1 tay, chống chói ngoài trời, tự động chia tờ và xuất VietQR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
