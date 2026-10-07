@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Users, Shield, KeyRound, Check, RefreshCw, AlertCircle, CheckCircle2, UserPlus, Plus } from 'lucide-react';
-import { UserProfile, UserRole, adminFetchProfiles, adminUpdateRole, updateUserPassword, adminCreateUser } from '../utils/supabaseClient';
+import { X, Search, Users, Shield, KeyRound, Check, RefreshCw, AlertCircle, CheckCircle2, UserPlus, Plus, CheckCircle, Ban, Clock } from 'lucide-react';
+import { UserProfile, UserRole, AccountStatus, adminFetchProfiles, adminUpdateRole, adminUpdateStatus, updateUserPassword, adminCreateUser } from '../utils/supabaseClient';
 
 interface AdminUsersModalProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
   const [newName, setNewName] = useState<string>('');
   const [newPass, setNewPass] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('trader');
+  const [newStatus, setNewStatus] = useState<AccountStatus>('active');
   const [isCreating, setIsCreating] = useState<boolean>(false);
 
   const loadData = async (query: string = '') => {
@@ -47,7 +48,7 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCreating(true);
-    const { profile, error } = await adminCreateUser(newPhone, newName, newPass, newRole);
+    const { profile, error } = await adminCreateUser(newPhone, newName, newPass, newRole, newStatus);
     setIsCreating(false);
 
     if (error) {
@@ -63,13 +64,25 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
-    const { success, error } = await adminUpdateRole(userId, newRole);
+  const handleRoleChange = async (userId: string, newRoleVal: UserRole) => {
+    const { success, error } = await adminUpdateRole(userId, newRoleVal);
     if (success) {
       setNotification({ type: 'success', message: 'Cập nhật vai trò thành công!' });
-      setProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, role: newRole } : p)));
+      setProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, role: newRoleVal } : p)));
     } else {
       setNotification({ type: 'error', message: error || 'Lỗi cập nhật vai trò' });
+    }
+    setTimeout(() => setNotification(null), 2500);
+  };
+
+  const handleStatusChange = async (userId: string, newStatusVal: AccountStatus) => {
+    const { success, error } = await adminUpdateStatus(userId, newStatusVal);
+    if (success) {
+      const msg = newStatusVal === 'active' ? 'Đã duyệt kích hoạt tài khoản!' : newStatusVal === 'blocked' ? 'Đã khóa tài khoản!' : 'Chuyển về trạng thái chờ duyệt!';
+      setNotification({ type: 'success', message: msg });
+      setProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, status: newStatusVal } : p)));
+    } else {
+      setNotification({ type: 'error', message: error || 'Lỗi cập nhật trạng thái' });
     }
     setTimeout(() => setNotification(null), 2500);
   };
@@ -235,24 +248,64 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ isOpen, onClos
                 className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
               >
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-slate-900 dark:text-white">{p.full_name}</span>
                     <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{p.phone}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                      p.status === 'active'
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300'
+                        : p.status === 'pending'
+                        ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 animate-pulse'
+                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300'
+                    }`}>
+                      {p.status === 'active' ? 'Đã duyệt' : p.status === 'pending' ? 'Chờ duyệt' : 'Đã khóa'}
+                    </span>
                   </div>
                   <span className="text-[10px] text-slate-400 block mt-0.5">
                     ID: {p.id.slice(0, 8)}... &bull; Tạo: {new Date(p.created_at).toLocaleDateString('vi-VN')}
+                    {p.approved_at && ` • Duyệt: ${new Date(p.approved_at).toLocaleDateString('vi-VN')}`}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
+                  {/* Nút duyệt nhanh nếu đang pending */}
+                  {p.status === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(p.id, 'active')}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1 shadow-sm transition-all"
+                      title="Phê duyệt kích hoạt tài khoản ngay"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Duyệt Ngay</span>
+                    </button>
+                  )}
+
+                  {/* Dropdown trạng thái phê duyệt */}
+                  <select
+                    value={p.status || 'pending'}
+                    onChange={(e) => handleStatusChange(p.id, e.target.value as AccountStatus)}
+                    className={`border rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer ${
+                      p.status === 'active'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 text-emerald-700 dark:text-emerald-400'
+                        : p.status === 'pending'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 text-amber-700 dark:text-amber-400'
+                        : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 text-rose-700 dark:text-rose-400'
+                    }`}
+                  >
+                    <option value="active">✅ Kích hoạt</option>
+                    <option value="pending">⏳ Chờ duyệt</option>
+                    <option value="blocked">🚫 Khóa</option>
+                  </select>
+
                   {/* Dropdown vai trò */}
                   <select
                     value={p.role}
                     onChange={(e) => handleRoleChange(p.id, e.target.value as UserRole)}
                     className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer"
                   >
-                    <option value="farmer">🌾 Nông Dân</option>
                     <option value="trader">⚖️ Thương Lái</option>
+                    <option value="farmer">🌾 Nông Dân</option>
                     <option value="admin">👑 Admin</option>
                   </select>
 

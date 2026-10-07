@@ -777,6 +777,38 @@ export default function App() {
             </button>
           </div>
         )}
+
+        {/* Banner thông báo tài khoản đang chờ Admin xét duyệt */}
+        {currentUser && currentUser.status === 'pending' && currentUser.role !== 'admin' && (
+          <div className="mx-3 mt-2 mb-1 p-3 bg-amber-500/15 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⏳</span>
+              <div>
+                <p className="font-bold text-amber-800 dark:text-amber-300">
+                  Tài khoản của bạn ({currentUser.phone}) đang ở trạng thái CHỜ DUYỆT BẢN QUYỀN
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                  Bạn vẫn có thể cân thử nghiệm. Để kích hoạt không giới hạn, vui lòng liên hệ Admin qua Zalo: <strong>039.399.0638</strong>
+                </p>
+              </div>
+            </div>
+            <a
+              href="https://zalo.me/0393990638"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-center shrink-0 transition-colors"
+            >
+              Liên Hệ Kích Hoạt
+            </a>
+          </div>
+        )}
+
+        {/* Banner cảnh báo tài khoản bị khóa */}
+        {currentUser && currentUser.status === 'blocked' && (
+          <div className="mx-3 mt-2 mb-1 p-3 bg-rose-500/15 border border-rose-500/40 rounded-2xl text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
+            <span>🚫 Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin <strong>039.399.0638</strong> để mở khóa!</span>
+          </div>
+        )}
         {/* KHU VỰC 2: MÀN HÌNH SỐ CÂN & CHỈ BÁO ÂM THANH */}
         <WeighingDisplay
           currentInput={currentInput}

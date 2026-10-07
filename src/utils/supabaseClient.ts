@@ -11,12 +11,17 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   : null;
 
 export type UserRole = 'farmer' | 'trader' | 'admin';
+export type AccountStatus = 'pending' | 'active' | 'blocked';
 
 export interface UserProfile {
   id: string;
   phone: string;
   full_name: string;
   role: UserRole;
+  status: AccountStatus;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  subscription_note?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +47,7 @@ export const DEFAULT_ADMIN = {
   password: 'CanluaPro@2026',
   fullName: 'Admin Nguyễn Công Dinh (Cần Thơ)',
   role: 'admin' as UserRole,
+  status: 'active' as AccountStatus,
 };
 
 // 1. ĐĂNG NHẬP BẰNG SĐT + MẬT KHẨU
@@ -61,6 +67,8 @@ export async function loginWithPhone(phone: string, password: string): Promise<{
       phone: DEFAULT_ADMIN.phone,
       full_name: DEFAULT_ADMIN.fullName,
       role: 'admin',
+      status: 'active',
+      approved_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -70,11 +78,13 @@ export async function loginWithPhone(phone: string, password: string): Promise<{
 
   // Nếu chưa cấu hình Supabase, dùng Local Session Demo
   if (!supabase) {
+    const isMockAdmin = cleanPhone === '0393990638';
     const demoProfile: UserProfile = {
       id: `local-${cleanPhone}`,
       phone: cleanPhone,
-      full_name: cleanPhone === '0393990638' ? 'Admin Nguyễn Công Dinh' : 'Người dùng ' + cleanPhone,
-      role: cleanPhone === '0393990638' ? 'admin' : (cleanPhone.endsWith('88') ? 'trader' : 'farmer'),
+      full_name: isMockAdmin ? 'Admin Nguyễn Công Dinh' : 'Người dùng ' + cleanPhone,
+      role: isMockAdmin ? 'admin' : (cleanPhone.endsWith('88') ? 'trader' : 'farmer'),
+      status: isMockAdmin || cleanPhone.endsWith('88') ? 'active' : 'pending',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -111,6 +121,7 @@ export async function loginWithPhone(phone: string, password: string): Promise<{
         phone: cleanPhone,
         full_name: authData.user.user_metadata?.full_name || 'Người dùng ' + cleanPhone,
         role: (authData.user.user_metadata?.role as UserRole) || 'farmer',
+        status: cleanPhone === DEFAULT_ADMIN.phone ? 'active' : 'pending',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -119,19 +130,24 @@ export async function loginWithPhone(phone: string, password: string): Promise<{
       return { profile: newProfile, error: null };
     }
 
-    localStorage.setItem('canlua_user_profile', JSON.stringify(profileData));
-    return { profile: profileData as UserProfile, error: null };
+    const currentProfile: UserProfile = {
+      ...profileData,
+      status: (profileData.status as AccountStatus) || 'pending',
+    };
+
+    localStorage.setItem('canlua_user_profile', JSON.stringify(currentProfile));
+    return { profile: currentProfile, error: null };
   } catch (err: unknown) {
     return { profile: null, error: err instanceof Error ? err.message : 'Lỗi kết nối máy chủ' };
   }
 }
 
-// 2. ĐĂNG KÝ TÀI KHOẢN MỚI BẰNG SĐT + MẬT KHẨU
+// 2. ĐĂNG KÝ TÀI KHOẢN MỚI BẰNG SĐT + MẬT KHẨU (MẶC ĐỊNH PENDING XÉT DUYỆT)
 export async function registerWithPhone(
   phone: string,
   password: string,
   fullName: string,
-  role: UserRole = 'farmer'
+  role: UserRole = 'trader'
 ): Promise<{ profile: UserProfile | null; error: string | null }> {
   const cleanPhone = cleanPhoneNumber(phone);
   if (!cleanPhone || cleanPhone.length < 9) {
@@ -144,15 +160,26 @@ export async function registerWithPhone(
     return { profile: null, error: 'Vui lòng nhập họ và tên' };
   }
 
+  const initialStatus: AccountStatus = cleanPhone === DEFAULT_ADMIN.phone ? 'active' : 'pending';
+
   if (!supabase) {
     const newProfile: UserProfile = {
       id: `local-${cleanPhone}`,
       phone: cleanPhone,
       full_name: fullName.trim(),
       role,
+      status: initialStatus,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+    try {
+      const stored = localStorage.getItem('canlua_mock_users');
+      const list: UserProfile[] = stored ? JSON.parse(stored) : [];
+      list.unshift(newProfile);
+      localStorage.setItem('canlua_mock_users', JSON.stringify(list));
+    } catch {
+      // ignore
+    }
     localStorage.setItem('canlua_user_profile', JSON.stringify(newProfile));
     return { profile: newProfile, error: null };
   }
@@ -184,6 +211,7 @@ export async function registerWithPhone(
       phone: cleanPhone,
       full_name: fullName.trim(),
       role,
+      status: initialStatus,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -265,9 +293,10 @@ export async function adminFetchProfiles(searchQuery: string = ''): Promise<{ pr
   if (!supabase) {
     // Mock profiles cho admin trải nghiệm offline (kết hợp các user đã tạo)
     const defaultList: UserProfile[] = [
-      { id: '1', phone: '0393990638', full_name: 'Nguyễn Công Dinh (Admin Cần Thơ)', role: 'admin', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: '2', phone: '0912345678', full_name: 'Chú Ba Ruộng Thới Lai', role: 'farmer', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: '3', phone: '0988888888', full_name: 'Thương Lái Út Lúa Tân Hưng', role: 'trader', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: '1', phone: '0393990638', full_name: 'Nguyễn Công Dinh (Admin Cần Thơ)', role: 'admin', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: '2', phone: '0912345678', full_name: 'Chú Ba Ruộng Thới Lai', role: 'farmer', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: '3', phone: '0988888888', full_name: 'Thương Lái Út Lúa Tân Hưng', role: 'trader', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: '4', phone: '0977112233', full_name: 'Trần Văn Cò (Chờ Duyệt)', role: 'trader', status: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
     ];
     let customList: UserProfile[] = [];
     try {
@@ -324,12 +353,62 @@ export async function adminUpdateRole(userId: string, newRole: UserRole): Promis
   }
 }
 
+// 7B. DÀNH CHO ADMIN: PHÊ DUYỆT / KHÓA TÀI KHOẢN (STATUS)
+export async function adminUpdateStatus(
+  userId: string,
+  newStatus: AccountStatus,
+  subscriptionNote?: string
+): Promise<{ success: boolean; error: string | null }> {
+  if (!supabase) {
+    try {
+      const stored = localStorage.getItem('canlua_mock_users');
+      let list: UserProfile[] = stored ? JSON.parse(stored) : [];
+      list = list.map(u => u.id === userId ? {
+        ...u,
+        status: newStatus,
+        approved_at: newStatus === 'active' ? new Date().toISOString() : u.approved_at,
+        subscription_note: subscriptionNote ?? u.subscription_note,
+        updated_at: new Date().toISOString()
+      } : u);
+      localStorage.setItem('canlua_mock_users', JSON.stringify(list));
+    } catch {
+      // ignore
+    }
+    return { success: true, error: null };
+  }
+
+  try {
+    const updatePayload: Record<string, unknown> = {
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    };
+    if (newStatus === 'active') {
+      updatePayload.approved_at = new Date().toISOString();
+    }
+    if (subscriptionNote !== undefined) {
+      updatePayload.subscription_note = subscriptionNote;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update(updatePayload)
+      .eq('id', userId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, error: null };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Lỗi cập nhật trạng thái phê duyệt' };
+  }
+}
+
 // 8. DÀNH CHO ADMIN: TẠO TÀI KHOẢN MỚI TRỰC TIẾP CHO BẠN HÀNG/THƯƠNG LÁI
 export async function adminCreateUser(
   phone: string,
   fullName: string,
   initialPassword: string,
-  role: UserRole
+  role: UserRole,
+  status: AccountStatus = 'active',
+  subscriptionNote?: string
 ): Promise<{ profile: UserProfile | null; error: string | null }> {
   const cleanPhone = cleanPhoneNumber(phone);
   if (!cleanPhone || cleanPhone.length < 9) {
@@ -348,6 +427,9 @@ export async function adminCreateUser(
       phone: cleanPhone,
       full_name: fullName.trim(),
       role,
+      status,
+      approved_at: status === 'active' ? new Date().toISOString() : null,
+      subscription_note: subscriptionNote,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -384,6 +466,9 @@ export async function adminCreateUser(
       phone: cleanPhone,
       full_name: fullName.trim(),
       role,
+      status,
+      approved_at: status === 'active' ? new Date().toISOString() : null,
+      subscription_note: subscriptionNote,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

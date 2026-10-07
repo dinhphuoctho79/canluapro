@@ -35,6 +35,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       phone: '0988888888',
       full_name: 'Thương Lái Út Lúa (Phiên Trải Nghiệm)',
       role: 'trader',
+      status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -170,6 +171,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <span className="font-mono font-bold text-sm">{currentUser.phone}</span>
               </div>
               <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Trạng thái:</span>
+                <span className={`px-2 py-0.5 rounded text-[11px] font-black uppercase ${
+                  currentUser.status === 'active'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300'
+                    : currentUser.status === 'pending'
+                    ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 animate-pulse'
+                    : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300'
+                }`}>
+                  {currentUser.status === 'active' ? '✅ Đã Kích Hoạt' : currentUser.status === 'pending' ? '⏳ Chờ Duyệt' : '🚫 Đã Khóa'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Vai trò:</span>
                 <span className={`px-2 py-0.5 rounded text-[11px] font-black uppercase ${
                   currentUser.role === 'admin'
@@ -181,6 +194,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {currentUser.role === 'admin' ? 'Quản Trị Viên (Admin)' : currentUser.role === 'trader' ? 'Thương Lái / Thợ Cân' : 'Nông Dân (Chủ Ruộng)'}
                 </span>
               </div>
+              {currentUser.status === 'pending' && (
+                <div className="pt-2 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800">
+                  ⚠️ Tài khoản của bạn đang chờ Admin kích hoạt gói bản quyền. Vui lòng liên hệ Zalo <strong>039.399.0638</strong> để duyệt nhanh!
+                </div>
+              )}
             </div>
 
             {/* Đổi mật khẩu */}
